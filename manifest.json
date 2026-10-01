@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "io.github.johnloringpollard.rewerd",
-  "name": "Rewerd",
+  "name": "Wordsmith",
   "version": "1.0.0",
   "author": "John Pollard",
   "description": "Rewrite selected or copied text with your own AI key, then replace it or copy the result.",
@@ -14,7 +14,7 @@
     "service": "Service.qml"
   },
   "barWidget": {
-    "displayName": "Rewerd",
+    "displayName": "Wordsmith",
     "category": "Productivity",
     "allowMultiple": false,
     "defaultSection": "right"

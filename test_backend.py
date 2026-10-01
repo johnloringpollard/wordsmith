@@ -241,5 +241,205 @@ class GenerationTests(unittest.TestCase):
             copy.assert_called_once_with('rewrite')
 
 
+class RetentionTests(unittest.TestCase):
+    def setUp(self):
+        from backend import Backend
+        with patch('backend.ConfigStore'), patch('backend.InstructionStore'):
+            self.backend = Backend()
+        self.backend.emit = Mock()
+        self.original = Selection('original', '0x123', 5, 'id', 'editor', True)
+        self.backend.selection = self.original
+        self.backend.result = 'rewrite'
+        self.backend.clipboard_baseline = 'original'
+
+    def capture(self, selected=None, clipboard='original', error=None):
+        snapshot = ClipboardSnapshot('text/plain', clipboard.encode())
+        with patch('backend.ClipboardSnapshot.capture', return_value=snapshot), \
+                patch('backend.Selection.capture', return_value=selected, side_effect=error):
+            self.backend.handle({'type': 'capture', 'id': 2})
+        return self.backend.emit.call_args
+
+    def fallback(self, text):
+        return Selection(text, '', 0, '', 'Clipboard', False)
+
+    def test_same_selection_preserves_result_and_original_target(self):
+        event = self.capture(self.original)
+        self.assertTrue(event.args[2]['retained'])
+        self.assertEqual(event.args[2]['result'], 'rewrite')
+        self.assertIs(self.backend.selection, self.original)
+
+    def test_unchanged_clipboard_preserves_selection_target_and_result(self):
+        event = self.capture(self.fallback('original'))
+        self.assertTrue(event.args[2]['retained'])
+        self.assertIs(self.backend.selection, self.original)
+        self.assertEqual(self.backend.result, 'rewrite')
+
+    def test_new_selection_resets_even_with_unchanged_clipboard(self):
+        from dataclasses import replace
+        event = self.capture(replace(self.original, text='new selection'))
+        self.assertFalse(event.args[2]['retained'])
+        self.assertEqual(self.backend.result, '')
+        self.assertEqual(self.backend.selection.text, 'new selection')
+
+    def test_same_text_in_another_window_starts_new_session(self):
+        from dataclasses import replace
+        event = self.capture(replace(self.original, address='0x456'))
+        self.assertFalse(event.args[2]['retained'])
+        self.assertEqual(self.backend.result, '')
+        self.assertEqual(self.backend.selection.address, '0x456')
+
+    def test_new_clipboard_starts_copy_only_session(self):
+        event = self.capture(self.fallback('new clipboard'), 'new clipboard')
+        self.assertFalse(event.args[2]['retained'])
+        self.assertFalse(event.args[2]['canReplace'])
+        self.assertEqual(self.backend.result, '')
+
+    def test_own_copy_and_replace_are_not_new_clipboard_input(self):
+        for operation in ('copy', 'replace'):
+            with self.subTest(operation=operation), patch('backend.copy') as write, \
+                    patch.object(Selection, 'replace') as paste:
+                self.backend.handle({'type': operation})
+                (write if operation == 'copy' else paste).assert_called_once_with('rewrite')
+                event = self.capture(self.fallback('rewrite'), 'rewrite')
+                self.assertTrue(event.args[2]['retained'])
+                self.assertEqual(event.args[2]['text'], 'original')
+                self.assertEqual(event.args[2]['result'], 'rewrite')
+                self.assertIs(self.backend.selection, self.original)
+
+    def test_explicitly_selecting_copied_output_is_new_input(self):
+        from dataclasses import replace
+        with patch('backend.copy'):
+            self.backend.handle({'type': 'copy'})
+        event = self.capture(replace(self.original, text='rewrite'), 'rewrite')
+        self.assertFalse(event.args[2]['retained'])
+        self.assertEqual(self.backend.result, '')
+
+    def test_no_input_retains_session_but_first_open_reports_error(self):
+        from backend import NoSelectedText
+        event = self.capture(clipboard='', error=NoSelectedText('Select text'))
+        self.assertTrue(event.args[2]['retained'])
+        self.assertEqual(self.backend.result, 'rewrite')
+        self.backend.selection = None
+        event = self.capture(clipboard='', error=NoSelectedText('Select text'))
+        self.assertEqual(event.kwargs['error'], 'Select text')
+
+    def test_capture_failure_preserves_work_and_blocks_replace_until_recapture(self):
+        event = self.capture(error=DesktopError('Focus changed'))
+        self.assertEqual(event.kwargs['error'], 'Focus changed')
+        self.assertIs(self.backend.selection, self.original)
+        self.assertEqual(self.backend.result, 'rewrite')
+        with patch.object(Selection, 'replace') as paste, patch('backend.copy') as write:
+            self.backend.handle({'type': 'replace'})
+            paste.assert_not_called()
+            self.backend.handle({'type': 'copy'})
+            write.assert_called_once_with('rewrite')
+            self.capture(self.original)
+            self.backend.handle({'type': 'replace'})
+            paste.assert_called_once_with('rewrite')
+
+    def test_reopen_while_generation_is_pending(self):
+        import threading
+        from backend import Backend, NoSelectedText, ProviderError
+        from dataclasses import replace
+
+        for scenario in ('same', 'clipboard', 'empty', 'new', 'capture_error',
+                         'provider_error', 'unexpected_error', 'cancel'):
+            with self.subTest(scenario=scenario):
+                started = threading.Event()
+                finish = threading.Event()
+                workers = []
+                real_thread = threading.Thread
+
+                def track_thread(*args, **kwargs):
+                    worker = real_thread(*args, **kwargs)
+                    workers.append(worker)
+                    return worker
+
+                def slow_generate(*_):
+                    started.set()
+                    if not finish.wait(2):
+                        raise RuntimeError('Timed out waiting for capture')
+                    if scenario == 'provider_error':
+                        raise ProviderError('Provider unavailable')
+                    if scenario == 'unexpected_error':
+                        raise RuntimeError('Unexpected failure')
+                    return 'late rewrite'
+
+                with patch('backend.ConfigStore'), patch('backend.InstructionStore'):
+                    self.backend = Backend()
+                self.backend.selection = self.original
+                self.backend.clipboard_baseline = 'original'
+                self.backend.emit = Mock()
+                with patch('backend.generate', side_effect=slow_generate), \
+                        patch('backend.threading.Thread', side_effect=track_thread):
+                    self.backend.handle({'type': 'generate', 'id': 10, 'prompt': 'rewrite'})
+                    try:
+                        self.assertTrue(started.wait(2))
+                        self.assertEqual(self.backend.active_request_id, 10)
+                        selected = self.original
+                        error = None
+                        if scenario == 'clipboard':
+                            selected = self.fallback('original')
+                        elif scenario == 'empty':
+                            error = NoSelectedText('Select text')
+                        elif scenario == 'new':
+                            selected = replace(self.original, text='new selection')
+                        elif scenario == 'capture_error':
+                            error = DesktopError('Focus changed')
+                        event = self.capture(selected, error=error)
+                        if scenario == 'capture_error':
+                            self.assertEqual(event.kwargs['error'], 'Focus changed')
+                        else:
+                            self.assertEqual(event.args[2]['generationId'], 0 if scenario == 'new' else 10)
+                        if scenario == 'cancel':
+                            self.backend.handle({'type': 'cancel', 'id': 11})
+                        self.backend.emit.reset_mock()
+                    finally:
+                        finish.set()
+                        for worker in workers:
+                            worker.join(2)
+                            self.assertFalse(worker.is_alive())
+
+                self.assertEqual(self.backend.active_request_id, 0)
+                if scenario in ('new', 'cancel'):
+                    self.backend.emit.assert_not_called()
+                    self.assertEqual(self.backend.result, '')
+                elif scenario in ('provider_error', 'unexpected_error'):
+                    self.assertEqual(self.backend.emit.call_args.args, ('generate', 10))
+                    self.assertTrue(self.backend.emit.call_args.kwargs['error'])
+                    self.assertEqual(self.backend.result, '')
+                else:
+                    self.backend.emit.assert_called_once_with('generate', 10, {'text': 'late rewrite'})
+                    self.assertEqual(self.backend.result, 'late rewrite')
+                    if scenario == 'capture_error':
+                        with patch.object(Selection, 'replace') as paste, patch('backend.copy') as write:
+                            self.backend.handle({'type': 'replace'})
+                            paste.assert_not_called()
+                            self.backend.handle({'type': 'copy'})
+                            write.assert_called_once_with('late rewrite')
+                    event = self.capture(self.original)
+                    self.assertEqual(event.args[2]['generationId'], 0)
+                    self.assertEqual(event.args[2]['result'], 'late rewrite')
+
+
+class WritingDefaultsTests(unittest.TestCase):
+    def test_save_defaults_dispatch_and_error(self):
+        import backend
+        import tempfile
+        from pathlib import Path
+        from providers import ConfigStore
+        with tempfile.TemporaryDirectory() as directory:
+            worker = backend.Backend()
+            worker.config = ConfigStore(Path(directory) / "settings.json")
+            worker.emit = Mock()
+            worker.handle({"type": "save_defaults", "id": 12, "defaultInstructions": "Prefer short sentences."})
+            worker.emit.assert_called_once_with("save_defaults", 12, worker.config.public())
+            self.assertEqual(worker.config.credentials()["defaultInstructions"], "Prefer short sentences.")
+            worker.emit.reset_mock()
+            worker.handle({"type": "save_defaults", "id": 13, "defaultInstructions": None})
+            self.assertTrue(worker.emit.call_args.kwargs["error"])
+            self.assertEqual(worker.config.public()["defaultInstructions"], "Prefer short sentences.")
+
+
 if __name__ == "__main__":
     unittest.main()

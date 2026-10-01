@@ -11,7 +11,7 @@ Item {
     property string sourceApp: ""
     property bool canReplace: false
     property string result: ""
-    property string prompt: "Reword for clarity and keep it concise. No em dashes."
+    property string prompt: "Reword for clarity and keep it concise."
     property string attemptedPrompt: ""
     property var savedInstructions: []
     property bool instructionsReady: false
@@ -25,6 +25,7 @@ Item {
     property int copyRequestId: 0
     readonly property bool copyConfirmed: copyFeedback.running
     property var config: ({provider: "openai", providers: {}})
+    property bool settingsBusy: false
     property int sequence: 0
     property int generationId: 0
     signal captured(int requestId)
@@ -43,9 +44,8 @@ Item {
     function capture() {
         if (phase === "capturing" || phase === "replacing") return 0
         copyFeedback.stop(); copyRequestId = 0
-        result = ""; error = ""; source = ""; canReplace = false; attemptedPrompt = ""
+        error = ""; canReplace = false
         persistInstruction("instruction_remember")
-        generationId = 0
         var id = send("capture")
         if (id) phase = "capturing"
         return id
@@ -80,7 +80,9 @@ Item {
         error = ""
         if (send("instruction_remove", {text: text})) instructionBusy = true
     }
-    function cancel() { send("cancel"); generationId = 0; phase = "idle" }
+    function cancel() {
+        send("cancel"); generationId = 0; phase = "idle"
+    }
     function copyResult() {
         error = ""
         copyFeedback.stop()
@@ -94,9 +96,16 @@ Item {
     }
     function save(provider, model, key, clearKey) {
         error = ""
-        send("save", {provider: provider, model: model, key: key, clearKey: clearKey})
+        if (settingsBusy) return
+        settingsBusy = !!send("save", {provider: provider, model: model, key: key, clearKey: clearKey})
+    }
+    function saveDefaults(defaultInstructions) {
+        error = ""
+        if (settingsBusy) return
+        settingsBusy = !!send("save_defaults", {defaultInstructions: defaultInstructions})
     }
     function receive(message) {
+        if (message.type === "save" || message.type === "save_defaults") settingsBusy = false
         if (message.type === "ready") { ready = true; config = message.data; return }
         if (["instructions", "instruction_remember", "instruction_save", "instruction_remove"].indexOf(message.type) !== -1) {
             if (message.type === "instruction_save" || message.type === "instruction_remove") instructionBusy = false
@@ -124,7 +133,9 @@ Item {
         }
         if (message.error) {
             error = message.error
-            phase = "idle"
+            if (message.type === "generate") generationId = 0
+            if (message.type === "capture") phase = generationId ? "generating" : "idle"
+            else if (phase !== "capturing") phase = "idle"
             if (message.type === "capture") captured(message.id)
             if (message.type === "replace") replacementFinished(true)
             if (message.type === "copy") copyFinished(true)
@@ -132,14 +143,20 @@ Item {
         }
         if (message.type === "capture") {
             source = message.data.text; sourceApp = message.data.app
-            canReplace = message.data.canReplace; phase = "idle"
+            result = message.data.result
+            if (!message.data.retained) { attemptedPrompt = ""; error = "" }
+            generationId = message.data.generationId || 0
+            canReplace = message.data.canReplace
+            phase = generationId ? "generating" : "idle"
             captured(message.id)
         } else if (message.type === "generate") {
-            result = message.data.text; phase = "idle"
+            generationId = 0
+            result = message.data.text
+            if (phase !== "capturing") phase = "idle"
             rewriteFinished()
-        } else if (message.type === "settings" || message.type === "save") {
+        } else if (message.type === "settings" || message.type === "save" || message.type === "save_defaults") {
             config = message.data
-            if (message.type === "save") settingsSaved()
+            if (message.type === "save" || message.type === "save_defaults") settingsSaved()
         } else if (message.type === "copy") {
             copyFeedback.restart()
             copyFinished(false)
@@ -161,8 +178,8 @@ Item {
         }
         onExited: {
             var replacing = root.phase === "replacing"
-            root.ready = false; root.phase = "idle"
-            root.instructionsReady = false; root.instructionBusy = false
+            root.ready = false; root.phase = "idle"; root.generationId = 0
+            root.instructionsReady = false; root.instructionBusy = false; root.settingsBusy = false
             root.source = ""; root.result = ""; root.canReplace = false; root.attemptedPrompt = ""
             copyFeedback.stop(); root.copyRequestId = 0
             root.error = "The editor disconnected. Reopen the panel to try again."

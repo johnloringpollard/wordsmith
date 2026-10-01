@@ -1,11 +1,15 @@
-# Rewerd 1.0.0
+# Wordsmith 1.0.0
 
 Rewrite selected or copied text in a small Omarchy panel using your own OpenAI, Claude, Google Gemini, or Cursor account.
 
-- Select text in your browser, Omawrite, or another application. If nothing is selected, Rewerd uses plain text from the clipboard.
+- Select text in your browser, Omawrite, or another application. If nothing is selected, Wordsmith uses plain text from the clipboard.
 - Adjust the prompt, review the rewrite, then replace the selection or copy the result.
 - Save prompts and automatically reuse the last prompt.
-- Add an optional Super+Alt+E shortcut. Enter rewrites; the next Enter replaces and closes, or copies and closes for clipboard input.
+- Edit shared writing defaults in Settings: no em dashes, rare emojis, preserved meaning and voice, accurate details, and concise wording. Explicit style requests take priority.
+- Recover the original text and last completed rewrite after closing the panel. Reopening with the same input also keeps a pending rewrite running. Different selected or copied text starts fresh; the comparison stays in memory until the plugin restarts.
+- Separate provider and writing-defaults editors return to Settings after saving. Back discards unsaved changes.
+- Use a compact panel with a pen-and-sparkle icon, consistent header spacing, and keyboard shortcut keycaps.
+- Add an optional Super+Shift+R shortcut. Enter rewrites; the next Enter replaces and closes, or copies and closes for clipboard input.
 - Keep provider keys and prompts in private local files outside the plugin directory.
 
 Requires Omarchy's Quattro shell, Hyprland Lua dispatchers, Python 3, and wl-clipboard. Cursor additionally requires its Agent CLI. Provider usage is billed by the provider. Replacement works in editable fields with standard copy/paste support; terminal and clipboard input use copying instead.
@@ -14,10 +18,9 @@ The release includes an MIT license, a preview rendered from the panel with samp
 
 ## Verification
 
-- 47 Python tests and 41 QML JavaScript behavior tests pass without provider requests.
+- 63 Python tests and 53 QML JavaScript behavior tests pass without provider requests.
 - Omarchy manifest validation and QML lint complete successfully. Lint reports existing dynamic-shell type and unqualified-access warnings.
-- The actual QML panel renders offscreen; preview interaction checks cover expansion, scrolling, and keyboard toggles.
-- Standard Omarchy add, enable, disable, update, and remove commands pass in an isolated filesystem with shell IPC stubbed. Removal preserves separate saved settings.
-- Desktop selection, replacement, clipboard fallback, and the keyboard workflow were exercised on the development build before packaging. This release changes its plugin ID and settings directory.
+- Settings UI checks cover navigation, saved and canceled drafts, failure handling, and keyboard focus.
+- The actual QML panel renders offscreen; preview interaction checks cover expansion, scrolling, and keyboard toggles. A gated local response also verifies that reopening during generation displays the completed response and preserves it on another reopen.
 
 Live paid provider requests and the full lifecycle in a separate real desktop session have not been repeated for this package.

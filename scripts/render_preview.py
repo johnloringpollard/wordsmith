@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """Render the real panel with sample data, without a desktop or provider request."""
+import argparse
 import os
 from pathlib import Path
 import tempfile
+import sys
+import json
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from providers import DEFAULT_INSTRUCTIONS
 
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 os.environ['QT_QUICK_BACKEND'] = 'software'
@@ -46,6 +52,11 @@ Item {
  property var bar
  property string text: ""
  property string tooltipText: ""
+ property Component iconComponent: null
+ property bool active: false
+ property bool useActiveColor: false
+ property color activeColor: "#3375be"
+ property color foreground: "#20242a"
  implicitWidth: 20; implicitHeight: 20
  signal pressed(int button)
 }''',
@@ -78,6 +89,7 @@ Window {
  visible: true; width: 580; height: 700; color: "#edf0f4"
  QtObject {
   id: sample
+  property bool settingsBusy: false
   property bool ready: true
   property bool instructionsReady: true
   property bool instructionBusy: false
@@ -85,12 +97,12 @@ Window {
   property string phase: "idle"
   property string source: "We wanted to give everyone a quick update that the new dashboard is now ready for you to try."
   property string result: "The new dashboard is ready. Try it today and let us know what you think."
-  property string prompt: "Reword for clarity and keep it concise. No em dashes."
+  property string prompt: "Reword for clarity and keep it concise."
   property string attemptedPrompt: prompt
   property string error: ""
   property bool canReplace: true
   property var savedInstructions: [prompt]
-  property var config: ({provider: "openai", providers: {openai: {model: "gpt-6-astra", hasKey: false}}})
+  property var config: ({provider: "openai", defaultInstructions: DEFAULTS_PLACEHOLDER, providers: {openai: {model: "gpt-6-astra", hasKey: false}}})
   signal captured(int requestId)
   signal replacementFinished(bool failed)
   signal settingsSaved()
@@ -99,7 +111,7 @@ Window {
   signal copyFinished(bool failed)
  }
  QtObject { id: sampleBar; property QtObject shell: QtObject { function serviceFor(id) { return sample } } }
- RewerdPanel {
+ WordsmithPanel {
   objectName: "previewPanel"
   anchors.fill: parent
   bar: sampleBar
@@ -108,18 +120,27 @@ Window {
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--settings', action='store_true')
+    parser.add_argument('--settings-page', choices=['index', 'provider', 'defaults'])
+    parser.add_argument('--dark', action='store_true')
+    parser.add_argument('--output', type=Path, default=ROOT / 'preview.png')
+    args = parser.parse_args()
     app = QGuiApplication([])
     engine = QQmlApplicationEngine()
     engine.warnings.connect(lambda errors: print('\n'.join(e.toString() for e in errors)))
     with tempfile.TemporaryDirectory(prefix='rewerd-preview-') as directory:
         folder = Path(directory)
         for name, text in STUBS.items():
+            if args.dark:
+                for light, dark in [('#20242a', '#d7e1e5'), ('#fafbfc', '#121e24'), ('#757c84', '#91a0a7'), ('#dfe3e8', '#3b4b53')]:
+                    text = text.replace(light, dark)
             path = folder / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text)
         panel = (ROOT / 'Panel.qml').read_text().replace('import Quickshell\n', '')
-        (folder / 'RewerdPanel.qml').write_text(panel)
-        (folder / 'Preview.qml').write_text(SCENE)
+        (folder / 'WordsmithPanel.qml').write_text(panel)
+        (folder / 'Preview.qml').write_text(SCENE.replace('DEFAULTS_PLACEHOLDER', json.dumps(DEFAULT_INSTRUCTIONS)))
         engine.addImportPath(str(folder))
         engine.load(QUrl.fromLocalFile(str(folder / 'Preview.qml')))
         QTest.qWait(500)
@@ -131,12 +152,22 @@ def main():
         card = panel_item.findChild(QObject, 'previewCard') if panel_item else None
         if card is None:
             raise RuntimeError('Panel did not load')
+        if args.dark:
+            window.setProperty('color', '#0b1419')
+        if args.settings or args.settings_page:
+            panel_item.setProperty('showSettings', True)
+            panel_item.loadSettings()
+            if args.settings_page == "provider":
+                panel_item.editProvider()
+            elif args.settings_page == "defaults":
+                panel_item.editDefaults()
+            QTest.qWait(100)
         window.setHeight(int(card.property('height')) + 40)
         QTest.qWait(100)
-        if not window.grabWindow().save(str(ROOT / 'preview.png')):
-            raise RuntimeError('Could not save preview.png')
+        if not window.grabWindow().save(str(args.output)):
+            raise RuntimeError(f'Could not save {args.output}')
         window.close()
-    print('Rendered preview.png from Panel.qml with sample text.')
+    print(f'Rendered {args.output} from Panel.qml with sample text.')
 
 
 if __name__ == '__main__':

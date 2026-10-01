@@ -21,6 +21,10 @@ class InstructionStoreTest(unittest.TestCase):
         self.store = InstructionStore(self.path)
 
     def test_default_is_not_written_until_edit(self):
+        self.assertEqual(
+            DEFAULT_INSTRUCTION,
+            "Reword for clarity and keep it concise.",
+        )
         self.assertEqual(self.store.read(), {"last": DEFAULT_INSTRUCTION, "saved": []})
         self.assertFalse(self.path.exists())
         with patch("instructions.Path.home", return_value=Path(self.directory.name)):
@@ -28,6 +32,16 @@ class InstructionStoreTest(unittest.TestCase):
                 InstructionStore().path,
                 Path(self.directory.name) / ".config/rewerd/instructions.json",
             )
+
+    def test_old_stock_draft_migrates_without_changing_saved_prompts(self):
+        previous_default = "Reword for clarity and keep it concise. No em dashes."
+        custom = "Use em dashes and an emoji in every sentence."
+        state = {"last": previous_default, "saved": [previous_default, custom]}
+        self.path.parent.mkdir()
+        self.path.write_text(json.dumps(state))
+        before = self.path.read_bytes()
+        self.assertEqual(self.store.read(), {**state, "last": DEFAULT_INSTRUCTION})
+        self.assertEqual(self.path.read_bytes(), before)
 
     def test_crud_reopen_and_last_independent_of_saved(self):
         self.store.save("First")
@@ -113,6 +127,19 @@ class InstructionStoreTest(unittest.TestCase):
                     with self.assertRaises(InstructionError):
                         operation()
                     self.assertEqual(self.path.read_bytes(), data)
+
+
+class StockPromptMigrationTests(unittest.TestCase):
+    def test_only_exact_legacy_last_prompt_is_migrated(self):
+        from instructions import LEGACY_DEFAULT_INSTRUCTIONS, DEFAULT_INSTRUCTION, InstructionStore
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "instructions.json"
+            for last in (*LEGACY_DEFAULT_INSTRUCTIONS, *(text + "\n" for text in LEGACY_DEFAULT_INSTRUCTIONS), DEFAULT_INSTRUCTION + " Keep links.", "  Custom\n", ""):
+                saved = [*sorted(LEGACY_DEFAULT_INSTRUCTIONS), "Custom"]
+                path.write_text(json.dumps({"last": last, "saved": saved}))
+                state = InstructionStore(path).read()
+                self.assertEqual(state["last"], DEFAULT_INSTRUCTION if last.strip() in LEGACY_DEFAULT_INSTRUCTIONS else last)
+                self.assertEqual(state["saved"], saved)
 
 
 if __name__ == "__main__":

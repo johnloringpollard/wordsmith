@@ -11,9 +11,12 @@ Panel {
     manageIpc: false
     readonly property var editor: bar && bar.shell ? bar.shell.serviceFor(moduleName) : null
     readonly property bool busy: editor && editor.phase !== "idle"
+    readonly property bool useWordsmithIcon: true
     readonly property color ink: Color.popups.text
     readonly property color muted: Color.muted
     property bool showSettings: false
+    property string settingsPage: "index"
+    onSettingsPageChanged: Qt.callLater(root.focusSettingsPage)
     property bool showSavedPrompts: false
     property bool previewExpanded: false
     property int captureId: 0
@@ -93,8 +96,32 @@ Panel {
         if (!editor) return
         awaitingCopy = false
         editor.error = ""
+        settingsPage = "index"
+    }
+    function focusSettingsPage() {
+        if (!opened || !showSettings) return
+        if (settingsPage === "defaults") defaultsInput.forceActiveFocus()
+        else if (settingsPage === "provider") provider.forceActiveFocus()
+        else settingsButton.forceActiveFocus()
+    }
+    function editProvider() {
+        editor.error = ""
         provider.currentIndex = Math.max(0, providerIds.indexOf(editor.config.provider))
         loadProvider()
+        settingsPage = "provider"
+    }
+    function editDefaults() {
+        editor.error = ""
+        defaultsInput.text = editor.config.defaultInstructions || ""
+        settingsPage = "defaults"
+    }
+    function backSettings() {
+        if (editor && editor.settingsBusy) return
+        if (editor) editor.error = ""
+        keyInput.text = ""
+        defaultsInput.text = ""
+        if (settingsPage === "index") showSettings = false
+        else settingsPage = "index"
     }
     function loadProvider() {
         var entry = editor ? editor.config.providers[providerIds[provider.currentIndex]] : null
@@ -106,7 +133,7 @@ Panel {
             awaitingCopy = false
             resetSavedFeedback()
             resetPreview()
-            keyInput.text = ""; showSettings = false; showSavedPrompts = false
+            keyInput.text = ""; defaultsInput.text = ""; settingsPage = "index"; showSettings = false; showSavedPrompts = false
             if (editor) editor.persistInstruction("instruction_remember")
         }
     }
@@ -132,7 +159,10 @@ Panel {
             root.reconcileSavedPrompts()
         }
         function onPromptChanged() { root.resetSavedFeedback(); root.awaitingCopy = false }
-        function onSettingsSaved() { keyInput.text = ""; root.showSettings = false }
+        function onSettingsSaved() {
+            keyInput.text = ""
+            root.settingsPage = "index"
+        }
         function onRewriteFinished() {
             if (root.opened && !root.showSettings) instruction.forceActiveFocus()
         }
@@ -151,6 +181,90 @@ Panel {
         font.pixelSize: 13
         textFormat: Text.PlainText
         wrapMode: Text.WordWrap
+    }
+    component WordsmithIcon: Canvas {
+        property color iconColor: root.ink
+        implicitWidth: 24
+        implicitHeight: 24
+        antialiasing: true
+        onIconColorChanged: requestPaint()
+        onWidthChanged: requestPaint()
+        onHeightChanged: requestPaint()
+        onPaint: {
+            var ctx = getContext("2d")
+            ctx.reset()
+            ctx.scale(width / 24, height / 24)
+            ctx.strokeStyle = iconColor
+            ctx.fillStyle = iconColor
+            ctx.lineWidth = 1.65
+            ctx.lineCap = "round"
+            ctx.lineJoin = "round"
+            ctx.beginPath()
+            ctx.moveTo(3, 21)
+            ctx.lineTo(6, 10)
+            ctx.lineTo(12, 6)
+            ctx.lineTo(18, 12)
+            ctx.lineTo(14, 18)
+            ctx.closePath()
+            ctx.stroke()
+            ctx.beginPath()
+            ctx.moveTo(12, 6)
+            ctx.lineTo(13.5, 4.5)
+            ctx.lineTo(19.5, 10.5)
+            ctx.lineTo(18, 12)
+            ctx.stroke()
+            ctx.beginPath()
+            ctx.moveTo(3.5, 20.5)
+            ctx.lineTo(9.5, 14.5)
+            ctx.stroke()
+            ctx.beginPath()
+            ctx.arc(10.5, 13.5, 1.4, 0, Math.PI * 2)
+            ctx.stroke()
+            ctx.beginPath()
+            ctx.moveTo(20, 1)
+            ctx.lineTo(20.8, 3.2)
+            ctx.lineTo(23, 4)
+            ctx.lineTo(20.8, 4.8)
+            ctx.lineTo(20, 7)
+            ctx.lineTo(19.2, 4.8)
+            ctx.lineTo(17, 4)
+            ctx.lineTo(19.2, 3.2)
+            ctx.closePath()
+            ctx.fill()
+        }
+        Accessible.ignored: true
+    }
+    component Keycap: Rectangle {
+        id: keycap
+        required property string label
+        implicitWidth: Math.ceil(keyLabel.implicitWidth) + 12
+        implicitHeight: 24
+        radius: 4
+        color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.035)
+        border.width: 1
+        border.color: root.muted
+        Accessible.role: Accessible.StaticText
+        Accessible.name: label
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.margins: 1
+            height: 2
+            radius: 1
+            color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.12)
+        }
+        Text {
+            id: keyLabel
+            anchors.centerIn: parent
+            text: keycap.label
+            color: root.ink
+            font.family: "monospace"
+            font.pixelSize: 11
+            font.weight: Font.DemiBold
+            font.letterSpacing: 0.5
+            Accessible.ignored: true
+        }
     }
     component Action: Controls.Button {
         id: action
@@ -213,8 +327,15 @@ Panel {
         id: button
         bar: root.bar
         text: "󰦨"
-        tooltipText: "Rewerd"
+        iconComponent: root.useWordsmithIcon ? wordsmithBarIcon : null
+        tooltipText: "Wordsmith"
         onPressed: root.toggle()
+    }
+    Component {
+        id: wordsmithBarIcon
+        WordsmithIcon {
+            iconColor: button.active && button.useActiveColor ? button.activeColor : button.foreground
+        }
     }
     Timer {
         id: replaceDelay
@@ -236,17 +357,19 @@ Panel {
         owner: root
         bar: root.bar
         open: root.opened
-        focusTarget: root.showSettings ? keyInput : instruction
+        focusTarget: !root.showSettings ? instruction : root.settingsPage === "defaults" ? defaultsInput
+            : root.settingsPage === "provider" ? provider : settingsButton
         contentWidth: fittedContentWidth(500)
-        readonly property int headerOffset: root.showSettings ? 0 : 12
-        contentHeight: root.showSettings ? cappedContentHeight(550)
-            : fittedContentHeight(headerRow.implicitHeight + mainContent.implicitHeight + 12 - headerOffset
+        contentHeight: root.showSettings ? (root.settingsPage === "index"
+            ? fittedContentHeight(headerRow.implicitHeight + settingsIndex.implicitHeight + 12
+                + (statusMessage.visible ? statusMessage.implicitHeight + 12 : 0))
+            : cappedContentHeight(550))
+            : fittedContentHeight(headerRow.implicitHeight + mainContent.implicitHeight + 12
                 + (statusMessage.visible ? statusMessage.implicitHeight + 12 : 0))
         padding: 20
 
         FocusScope {
             anchors.fill: parent
-            anchors.topMargin: -popup.headerOffset
             Keys.onEscapePressed: root.close()
             ColumnLayout {
                 anchors.fill: parent
@@ -255,13 +378,21 @@ Panel {
                     id: headerRow
                     Layout.fillWidth: true
                     spacing: 9
-                    Label { text: button.text; font.pixelSize: 22; Accessible.ignored: true }
-                    Label { text: "Rewerd"; font.pixelSize: 20; font.weight: Font.DemiBold; Layout.fillWidth: true }
+                    Item {
+                        Layout.preferredWidth: 24
+                        Layout.preferredHeight: 24
+                        WordsmithIcon { anchors.fill: parent; visible: root.useWordsmithIcon }
+                        Label { anchors.centerIn: parent; text: button.text; font.pixelSize: 22; visible: !root.useWordsmithIcon; Accessible.ignored: true }
+                    }
+                    Label { text: "Wordsmith"; font.pixelSize: 20; font.weight: Font.DemiBold; Layout.fillWidth: true }
                     Action {
                         id: settingsButton
+                        objectName: "settingsButton"
                         textColor: root.showSettings ? root.ink : root.muted
-                        text: root.showSettings ? "Back" : "\uf013"
+                        text: root.showSettings ? "‹ Back" : "\uf013"
                         font.pixelSize: root.showSettings ? 12 : 18
+                        font.underline: root.showSettings && (hovered || visualFocus)
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
                         padding: 8
                         Layout.minimumWidth: 36
                         Layout.minimumHeight: 36
@@ -289,12 +420,13 @@ Panel {
                         Controls.ToolTip.delay: 600
                         background: Rectangle {
                             radius: 7
-                            color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, settingsButton.down ? 0.13 : settingsButton.hovered || settingsButton.visualFocus ? 0.07 : 0)
-                            border.width: root.showSettings && settingsButton.activeFocus ? 1 : 0
-                            border.color: Color.accent
+                            color: root.showSettings ? "transparent" : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, settingsButton.down ? 0.13 : settingsButton.hovered || settingsButton.visualFocus ? 0.07 : 0)
                         }
-                        enabled: !root.busy
-                        onClicked: { root.showSettings = !root.showSettings; if (root.showSettings) root.loadSettings() }
+                        enabled: !root.busy && !(root.editor && root.editor.settingsBusy)
+                        onClicked: {
+                            if (root.showSettings) root.backSettings()
+                            else { root.showSettings = true; root.loadSettings() }
+                        }
                     }
                 }
                 Label {
@@ -375,7 +507,7 @@ Panel {
                             Field {
                                 id: instruction
                                 Layout.fillWidth: true
-                                text: root.editor ? root.editor.prompt : "Reword for clarity and keep it concise. No em dashes."
+                                text: root.editor ? root.editor.prompt : "Reword for clarity and keep it concise. No em dashes. Rarely include an emoji."
                                 enabled: root.editor && root.editor.ready && root.editor.instructionsReady && !root.busy
                                 maximumLength: 8000
                                 Accessible.name: "Rewrite prompt"
@@ -608,17 +740,87 @@ Panel {
                             }
                         }
                         ColumnLayout {
-                            visible: root.showSettings
+                            id: settingsIndex
+                            visible: root.showSettings && root.settingsPage === "index"
+                            Layout.fillWidth: true
+                            spacing: 18
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 16
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 5
+                                    Label { text: "AI provider"; font.pixelSize: 15 }
+                                    Label {
+                                        Layout.fillWidth: true
+                                        color: root.muted
+                                        text: {
+                                            if (!root.editor) return ""
+                                            var id = root.editor.config.provider
+                                            var entry = root.editor.config.providers[id]
+                                            var name = ["OpenAI", "Claude", "Google Gemini", "Cursor"][root.providerIds.indexOf(id)]
+                                            return name + (entry ? " · " + entry.model : "")
+                                        }
+                                    }
+                                }
+                                Action {
+                                    objectName: "providerEditButton"
+                                    text: "Edit"
+                                    enabled: root.editor && root.editor.ready && !root.editor.settingsBusy
+                                    Accessible.name: "Edit AI provider"
+                                    onClicked: root.editProvider()
+                                }
+                            }
+                            Rectangle { Layout.fillWidth: true; height: 1; color: root.muted; opacity: 0.25 }
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 16
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 5
+                                    Label { text: "Writing defaults"; font.pixelSize: 15 }
+                                    Label {
+                                        Layout.fillWidth: true
+                                        color: root.muted
+                                        maximumLineCount: 2
+                                        elide: Text.ElideRight
+                                        text: root.editor && root.editor.config.defaultInstructions && root.editor.config.defaultInstructions.trim()
+                                            ? root.editor.config.defaultInstructions : "No writing defaults"
+                                    }
+                                }
+                                Action {
+                                    objectName: "defaultsEditButton"
+                                    text: "Edit"
+                                    enabled: root.editor && root.editor.ready && !root.editor.settingsBusy
+                                    Accessible.name: "Edit writing defaults"
+                                    onClicked: root.editDefaults()
+                                }
+                            }
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Layout.topMargin: 8
+                                spacing: 8
+                                Label { text: "Keyboard shortcut"; color: root.muted; Layout.fillWidth: true }
+                                Keycap { label: "SUPER" }
+                                Label { text: "+"; color: root.muted; Accessible.ignored: true }
+                                Keycap { label: "SHIFT" }
+                                Label { text: "+"; color: root.muted; Accessible.ignored: true }
+                                Keycap { label: "R" }
+                            }
+                        }
+                        ColumnLayout {
+                            visible: root.showSettings && root.settingsPage === "provider"
+                            enabled: root.editor && root.editor.ready && !root.editor.settingsBusy
                             Layout.fillWidth: true
                             spacing: 12
                             RowLayout {
                                 Layout.fillWidth: true
                                 spacing: 12
-                                Label { text: "Choose your provider"; font.pixelSize: 15; Layout.fillWidth: true }
+                                Label { text: "AI provider"; font.pixelSize: 15; Layout.fillWidth: true }
                                 Controls.Button {
                                     id: apiKeyLink
                                     text: "Get your " + provider.currentText + " API key ↗"
-                                    Layout.maximumWidth: parent.width * 0.58
+                                    Layout.maximumWidth: popup.contentWidth * 0.58
                                     padding: 0
                                     topPadding: 2
                                     bottomPadding: 2
@@ -639,6 +841,7 @@ Panel {
                             }
                             Controls.ComboBox {
                                 id: provider
+                                objectName: "provider"
                                 Layout.fillWidth: true
                                 model: ["OpenAI", "Claude", "Google Gemini", "Cursor"]
                                 padding: 10
@@ -704,10 +907,11 @@ Panel {
                                 Accessible.name: "AI provider"
                             }
                             Label { text: "Model" }
-                            Field { id: modelInput; Layout.fillWidth: true; placeholderText: "Model ID"; Accessible.name: "Model ID" }
+                            Field { id: modelInput; objectName: "modelInput"; Layout.fillWidth: true; placeholderText: "Model ID"; Accessible.name: "Model ID" }
                             Label { text: "API key" }
                             Field {
                                 id: keyInput
+                                objectName: "keyInput"
                                 Layout.fillWidth: true
                                 echoMode: TextInput.Password
                                 placeholderText: {
@@ -725,12 +929,13 @@ Panel {
                             }
                             Label {
                                 Layout.fillWidth: true
-                                text: "Keys are saved in a private file on this computer. Rewerd sends the selected text and prompt to your chosen provider."
+                                text: "Keys are saved in a private file on this computer. Wordsmith sends the selected text and prompt to your chosen provider."
                                 color: root.muted; font.pixelSize: 11
                             }
                             RowLayout {
                                 Action {
-                                    text: "Save settings"
+                                    objectName: "providerSaveButton"
+                                    text: "Save"
                                     enabled: modelInput.text.trim().length > 0
                                     onClicked: root.editor.save(root.providerIds[provider.currentIndex], modelInput.text.trim(), keyInput.text.trim(), false)
                                 }
@@ -738,6 +943,48 @@ Panel {
                                     text: "Remove key"
                                     onClicked: root.editor.save(root.providerIds[provider.currentIndex], modelInput.text.trim(), "", true)
                                 }
+                            }
+                        }
+                        ColumnLayout {
+                            visible: root.showSettings && root.settingsPage === "defaults"
+                            enabled: root.editor && root.editor.ready && !root.editor.settingsBusy
+                            Layout.fillWidth: true
+                            spacing: 12
+                            Label { text: "Writing defaults"; font.pixelSize: 15 }
+                            Label {
+                                Layout.fillWidth: true
+                                text: "Applied to every rewrite. Your rewrite prompt can override these preferences. Leave blank to turn them off."
+                                color: root.muted
+                            }
+                            Controls.ScrollView {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 290
+                                clip: true
+                                Controls.TextArea {
+                                    id: defaultsInput
+                                    objectName: "defaultsInput"
+                                    color: root.ink
+                                    font.family: Style.font.family
+                                    font.pixelSize: 13
+                                    padding: 12
+                                    wrapMode: TextEdit.Wrap
+                                    textFormat: TextEdit.PlainText
+                                    selectByMouse: true
+                                    Accessible.name: "Writing defaults"
+                                    background: Rectangle {
+                                        radius: 7
+                                        color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.04)
+                                        border.width: 1
+                                        border.color: defaultsInput.activeFocus ? Color.accent : root.muted
+                                    }
+                                }
+                            }
+                            Action {
+                                objectName: "defaultsSaveButton"
+                                Layout.alignment: Qt.AlignRight
+                                text: "Save"
+                                enabled: defaultsInput.text.length <= 8000
+                                onClicked: root.editor.saveDefaults(defaultsInput.text)
                             }
                         }
                     }

@@ -22,7 +22,7 @@ function harness(phase = 'idle') {
     let replacements = 0;
     let focused = 0;
     const editor = vm.createContext({
-        ready: true, instructionsReady: true, savedInstructions: [], instructionBusy: false,
+        ready: true, settingsBusy: false, config: {provider: "openai", defaultInstructions: "No em dashes.", providers: {openai: {model: "original-model", hasKey: true}}}, instructionsReady: true, savedInstructions: [], instructionBusy: false,
         promptDirty: false, promptRevision: 0, lastPromptWriteId: 0, lastPromptWriteRevision: 0, phase, source: 'Previous selection', result: 'Previous rewrite',
         prompt: 'Previous instruction', attemptedPrompt: 'Previous instruction', error: '', notice: '', canReplace: true,
         sourceApp: 'chrome', sequence: 7, generationId: 7, copyRequestId: 0,
@@ -34,7 +34,7 @@ function harness(phase = 'idle') {
         rewriteFinished: () => panel.onRewriteFinished(),
         copyFinished: failed => panel.onCopyFinished(failed),
     });
-    for (const name of ['send', 'capture', 'generate', 'receive', 'updatePrompt', 'persistInstruction', 'removeInstruction', 'copyResult']) {
+    for (const name of ['send', 'capture', 'generate', 'receive', 'updatePrompt', 'persistInstruction', 'removeInstruction', 'copyResult', 'cancel', 'save', 'saveDefaults']) {
         vm.runInContext(qmlFunction('Service.qml', name), editor);
     }
     const feedback = { opacity: 1, scale: 0.9 };
@@ -61,16 +61,19 @@ function harness(phase = 'idle') {
         close() { this.opened = false; closed++; },
         savedFeedback: feedback, savedPromptModel, previewExpanded: false,
         selectionScroll: { contentY: 0 }, keyInput: { text: '' },
+        settingsPage: 'index', providerIds: ['openai', 'claude', 'google', 'cursor'],
+        provider: { currentIndex: 0 }, modelInput: { text: '' }, defaultsInput: { text: '' },
         savedFeedbackAnimation: { restart() { feedbackStarts++; }, stop() { feedbackStops++; } },
         controller: { show() { shown++; } },
     });
     panel.root = panel;
-    for (const name of ['resetPreview', 'reconcileSavedPrompts', 'acceptPrompt', 'replaceSelection', 'rewrite']) {
+    for (const name of ['resetPreview', 'reconcileSavedPrompts', 'acceptPrompt', 'replaceSelection', 'rewrite', 'loadSettings', 'loadProvider', 'editProvider', 'editDefaults', 'backSettings']) {
         vm.runInContext(qmlFunction('Panel.qml', name), panel);
     }
-    for (const name of ['onSourceChanged', 'onSavedInstructionsChanged', 'onRewriteFinished', 'onCopyFinished', 'onReadyChanged']) {
+    for (const name of ['onSourceChanged', 'onSavedInstructionsChanged', 'onRewriteFinished', 'onCopyFinished', 'onReadyChanged', 'onSettingsSaved']) {
         vm.runInContext(qmlFunction('Panel.qml', name, 8), panel);
     }
+    editor.settingsSaved = () => panel.onSettingsSaved();
     let savedInstructions = editor.savedInstructions;
     Object.defineProperty(editor, 'savedInstructions', {
         get() { return savedInstructions; },
@@ -101,29 +104,24 @@ for (const phase of ['idle', 'generating']) {
         assert.deepEqual(messages, [{ type: 'capture', id: 8 }]);
         assert.equal(panel.captureId, 8);
         assert.equal(editor.phase, 'capturing');
-        assert.equal(editor.source, '');
-        assert.equal(editor.result, '');
+        assert.equal(editor.source, 'Previous selection');
+        assert.equal(editor.result, phase === 'generating' ? '' : 'Previous rewrite');
         assert.equal(editor.prompt, 'Previous instruction');
         assert.equal(editor.canReplace, false);
-        assert.equal(editor.generationId, 0);
-        assert.equal(editor.attemptedPrompt, '');
+        assert.equal(editor.generationId, oldGenerationId);
+        assert.equal(editor.attemptedPrompt, 'Previous instruction');
         assert.equal(shown(), 0);
 
-        editor.receive({ type: 'generate', id: oldGenerationId, data: { text: 'Late old rewrite' } });
-        assert.equal(editor.result, '');
-        assert.equal(editor.phase, 'capturing');
-        editor.receive({ type: 'generate', id: oldGenerationId, error: 'Late old error' });
-        assert.equal(editor.error, '');
-        assert.equal(editor.phase, 'capturing');
-
         editor.receive({ type: 'capture', id: 8,
-            data: { text: 'New Chrome selection', app: 'chrome', canReplace: true } });
+            data: { text: 'New Chrome selection', app: 'chrome', canReplace: true, result: '', retained: false } });
         assert.equal(editor.source, 'New Chrome selection');
+        assert.equal(editor.attemptedPrompt, '');
         assert.equal(editor.result, '');
         assert.equal(editor.phase, 'idle');
         assert.equal(shown(), 1);
         editor.receive({ type: 'generate', id: oldGenerationId, data: { text: 'Even later rewrite' } });
         assert.equal(editor.source, 'New Chrome selection');
+        assert.equal(editor.attemptedPrompt, '');
         assert.equal(editor.result, '');
     });
 }
@@ -156,7 +154,7 @@ test('capture startup failure opens the panel to show its error', () => {
     panel.open();
     assert.deepEqual(messages, []);
     assert.equal(panel.captureId, 0);
-    assert.equal(editor.result, '');
+    assert.equal(editor.result, 'Previous rewrite');
     assert.match(editor.error, /starting/);
     assert.equal(shown(), 1);
 });
@@ -274,11 +272,11 @@ test('a failed send does not mark a new prompt as attempted', () => {
     assert.equal(messages.length, 0);
 });
 
-test('a failed capture clears the attempted prompt', () => {
+test('a failed capture preserves the attempted prompt', () => {
     const { editor } = harness();
     editor.ready = false;
     editor.capture();
-    assert.equal(editor.attemptedPrompt, '');
+    assert.equal(editor.attemptedPrompt, 'Previous instruction');
 });
 
 test('backend exit clears attempted prompt and leaves the draft intact', () => {
@@ -598,4 +596,212 @@ test('mouse rewrite supersedes pending Enter-copy and keeps next Enter usable', 
     assert.equal(messages.at(-1).type, 'copy');
     editor.receive({ type: 'copy', id: messages.at(-1).id });
     assert.equal(closed(), 1);
+});
+
+
+test('retained capture restores backend result and keeps the matching instruction', () => {
+    const { editor, panel, messages } = harness();
+    panel.open();
+    editor.receive({ type: 'capture', id: panel.captureId, data: {
+        text: 'Previous selection', app: 'chrome', canReplace: true,
+        result: 'Backend completed rewrite', retained: true,
+    } });
+    assert.equal(editor.source, 'Previous selection');
+    assert.equal(editor.result, 'Backend completed rewrite');
+    assert.equal(editor.attemptedPrompt, 'Previous instruction');
+    assert.equal(editor.canReplace, true);
+    editor.copyResult();
+    assert.equal(messages.at(-1).type, 'copy');
+});
+
+test('capture failure keeps comparison visible and replacement disabled', () => {
+    const { editor, panel, shown } = harness();
+    editor.generationId = 0;
+    panel.open();
+    editor.receive({ type: 'capture', id: panel.captureId, error: 'Focus changed' });
+    assert.equal(editor.source, 'Previous selection');
+    assert.equal(editor.result, 'Previous rewrite');
+    assert.equal(editor.attemptedPrompt, 'Previous instruction');
+    assert.equal(editor.canReplace, false);
+    assert.equal(editor.phase, 'idle');
+    assert.equal(editor.error, 'Focus changed');
+    assert.equal(shown(), 1);
+});
+
+for (const completionFirst of [false, true]) {
+    test(`unchanged reopen retains a rewrite completing ${completionFirst ? 'before' : 'after'} capture`, () => {
+        const { editor, panel, shown } = harness('generating');
+        editor.result = '';
+        panel.open();
+        const completion = { type: 'generate', id: 7, data: { text: 'Fresh rewrite' } };
+        if (completionFirst) {
+            editor.receive(completion);
+            assert.equal(editor.phase, 'capturing');
+            assert.equal(editor.generationId, 0);
+        }
+        editor.receive({ type: 'capture', id: panel.captureId, data: {
+            text: 'Previous selection', app: 'chrome', canReplace: true,
+            result: completionFirst ? 'Fresh rewrite' : '', retained: true,
+            generationId: completionFirst ? 0 : 7,
+        } });
+        assert.equal(shown(), 1);
+        assert.equal(editor.phase, completionFirst ? 'idle' : 'generating');
+        if (!completionFirst) editor.receive(completion);
+        assert.equal(editor.phase, 'idle');
+        assert.equal(editor.generationId, 0);
+        assert.equal(editor.result, 'Fresh rewrite');
+        assert.equal(editor.attemptedPrompt, 'Previous instruction');
+    });
+}
+
+test('completion before a changed capture is cleared with the old instruction', () => {
+    const { editor, panel } = harness('generating');
+    editor.result = '';
+    panel.open();
+    editor.receive({ type: 'generate', id: 7, data: { text: 'Old rewrite' } });
+    assert.equal(editor.phase, 'capturing');
+    editor.receive({ type: 'capture', id: panel.captureId, data: {
+        text: 'New selection', app: 'chrome', canReplace: true,
+        result: '', retained: false, generationId: 0,
+    } });
+    assert.equal(editor.result, '');
+    assert.equal(editor.attemptedPrompt, '');
+    assert.equal(editor.generationId, 0);
+    editor.receive({ type: 'generate', id: 7, data: { text: 'Stale rewrite' } });
+    assert.equal(editor.result, '');
+});
+
+for (const completionFirst of [false, true]) {
+    test(`provider failure ${completionFirst ? 'before' : 'after'} capture finishes the retained request`, () => {
+        const { editor, panel } = harness('generating');
+        editor.result = '';
+        panel.open();
+        const failure = { type: 'generate', id: 7, error: 'Provider unavailable' };
+        if (completionFirst) {
+            editor.receive(failure);
+            assert.equal(editor.phase, 'capturing');
+        }
+        editor.receive({ type: 'capture', id: panel.captureId, data: {
+            text: 'Previous selection', app: 'chrome', canReplace: true,
+            result: '', retained: true, generationId: completionFirst ? 0 : 7,
+        } });
+        if (!completionFirst) editor.receive(failure);
+        assert.equal(editor.phase, 'idle');
+        assert.equal(editor.generationId, 0);
+        assert.equal(editor.result, '');
+        assert.equal(editor.error, 'Provider unavailable');
+    });
+}
+
+test('capture error preserves a pending rewrite and leaves replacement disabled', () => {
+    const { editor, panel, shown } = harness('generating');
+    editor.result = '';
+    panel.open();
+    editor.receive({ type: 'capture', id: panel.captureId, error: 'Focus changed' });
+    assert.equal(shown(), 1);
+    assert.equal(editor.phase, 'generating');
+    assert.equal(editor.generationId, 7);
+    editor.receive({ type: 'generate', id: 7, data: { text: 'Fresh rewrite' } });
+    assert.equal(editor.result, 'Fresh rewrite');
+    assert.equal(editor.generationId, 0);
+    assert.equal(editor.phase, 'idle');
+    assert.equal(editor.canReplace, false);
+    assert.equal(editor.error, 'Focus changed');
+});
+
+test('cancel after reopening discards the pending response', () => {
+    const { editor, panel, messages } = harness('generating');
+    editor.result = '';
+    panel.open();
+    editor.receive({ type: 'capture', id: panel.captureId, data: {
+        text: 'Previous selection', app: 'chrome', canReplace: true,
+        result: '', retained: true, generationId: 7,
+    } });
+    editor.cancel();
+    assert.equal(messages.at(-1).type, 'cancel');
+    editor.receive({ type: 'generate', id: 7, data: { text: 'Canceled rewrite' } });
+    assert.equal(editor.result, '');
+    assert.equal(editor.generationId, 0);
+    assert.equal(editor.phase, 'idle');
+});
+
+test('provider failure before a changed capture cannot leak onto the new input', () => {
+    const { editor, panel } = harness('generating');
+    editor.result = '';
+    panel.open();
+    editor.receive({ type: 'generate', id: 7, error: 'Old provider error' });
+    editor.receive({ type: 'capture', id: panel.captureId, data: {
+        text: 'New selection', app: 'chrome', canReplace: true,
+        result: '', retained: false, generationId: 0,
+    } });
+    assert.equal(editor.error, '');
+    assert.equal(editor.phase, 'idle');
+    assert.equal(editor.result, '');
+});
+
+
+test('settings editors save to the index and preserve a failed draft', () => {
+    const { editor, panel, messages } = harness();
+    panel.showSettings = true;
+    panel.loadSettings();
+    panel.editDefaults();
+    assert.equal(panel.settingsPage, 'defaults');
+    assert.equal(panel.defaultsInput.text, 'No em dashes.');
+    panel.defaultsInput.text = 'Use em dashes freely.';
+    editor.saveDefaults(panel.defaultsInput.text);
+    const request = messages.at(-1);
+    assert.equal(request.type, 'save_defaults');
+    assert.equal(request.defaultInstructions, panel.defaultsInput.text);
+    assert.equal(editor.settingsBusy, true);
+    panel.backSettings();
+    assert.equal(panel.settingsPage, 'defaults');
+    editor.saveDefaults('Duplicate');
+    assert.equal(messages.at(-1), request);
+    editor.receive({type: 'save_defaults', id: request.id, error: 'Cannot save'});
+    assert.equal(editor.settingsBusy, false);
+    assert.equal(panel.settingsPage, 'defaults');
+    assert.equal(panel.defaultsInput.text, 'Use em dashes freely.');
+    assert.equal(editor.config.defaultInstructions, 'No em dashes.');
+    editor.saveDefaults(panel.defaultsInput.text);
+    editor.receive({type: 'save_defaults', id: messages.at(-1).id, data: {...editor.config, defaultInstructions: panel.defaultsInput.text}});
+    assert.equal(panel.settingsPage, 'index');
+    assert.equal(panel.showSettings, true);
+    panel.editDefaults();
+    assert.equal(panel.defaultsInput.text, 'Use em dashes freely.');
+    panel.defaultsInput.text = '';
+    editor.saveDefaults('');
+    editor.receive({type: 'save_defaults', id: messages.at(-1).id, data: {...editor.config, defaultInstructions: ''}});
+    assert.equal(editor.config.defaultInstructions, '');
+    assert.equal(panel.settingsPage, 'index');
+});
+
+test('Back cancels editor drafts and provider save returns to Settings', () => {
+    const { editor, panel, messages } = harness();
+    panel.showSettings = true;
+    panel.editDefaults();
+    panel.defaultsInput.text = 'Discard';
+    panel.backSettings();
+    panel.editDefaults();
+    assert.equal(panel.defaultsInput.text, editor.config.defaultInstructions);
+    panel.backSettings();
+    panel.editProvider();
+    assert.equal(panel.modelInput.text, 'original-model');
+    panel.modelInput.text = 'discard-model';
+    panel.keyInput.text = 'discard-key';
+    panel.backSettings();
+    assert.equal(panel.keyInput.text, '');
+    panel.editProvider();
+    assert.equal(panel.modelInput.text, 'original-model');
+    editor.save('openai', 'new-model', 'new-key', false);
+    assert.equal(editor.settingsBusy, true);
+    editor.receive({type: 'save', id: messages.at(-1).id, error: 'Cannot save'});
+    assert.equal(panel.settingsPage, 'provider');
+    assert.equal(editor.settingsBusy, false);
+    editor.save('openai', 'new-model', 'new-key', false);
+    editor.receive({type: 'save', id: messages.at(-1).id, data: {...editor.config, providers: {openai: {model: 'new-model', hasKey: true}}}});
+    assert.equal(panel.settingsPage, 'index');
+    assert.equal(panel.showSettings, true);
+    assert.equal(panel.keyInput.text, '');
+    panel.backSettings();
+    assert.equal(panel.showSettings, false);
 });

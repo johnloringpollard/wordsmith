@@ -6,7 +6,11 @@ from pathlib import Path
 import tempfile
 
 
-DEFAULT_INSTRUCTION = "Reword for clarity and keep it concise. No em dashes."
+DEFAULT_INSTRUCTION = "Reword for clarity and keep it concise."
+LEGACY_DEFAULT_INSTRUCTIONS = {
+    DEFAULT_INSTRUCTION + " No em dashes.",
+    DEFAULT_INSTRUCTION + " No em dashes. Rarely include an emoji.",
+}
 MAX_INSTRUCTION_LENGTH = 8000
 MAX_SAVED_INSTRUCTIONS = 100
 MAX_FILE_BYTES = 4 * 1024 * 1024
@@ -63,6 +67,8 @@ class InstructionStore:
         except (ValueError, UnicodeError, RecursionError) as error:
             raise InstructionError("The instruction file is corrupt.") from error
         self._validate_state(state)
+        if state["last"].strip() in LEGACY_DEFAULT_INSTRUCTIONS:
+            state["last"] = DEFAULT_INSTRUCTION
         return state
 
     def _write(self, state):

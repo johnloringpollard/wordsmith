@@ -1,80 +1,62 @@
-# Publish Rewerd 1.0.0
+# Release Wordsmith
 
-These are maintainer instructions for a future public release. Preparing this checkout does not create a GitHub repository, release, or marketplace listing.
+The review repository is `johnloringpollard/wordsmith`. Keep it private and keep the GitHub release in draft until the owner finishes reviewing it. A GitHub draft release is separate from an Omarchy marketplace listing. The marketplace has no documented unpublished listing editor.
 
-The permanent plugin ID is `io.github.johnloringpollard.rewerd`. The intended repository is `johnloringpollard/rewerd`, with John Pollard as author and MIT as the license. Keep the ID stable across updates.
+The display name is Wordsmith. Its stable plugin ID remains `io.github.johnloringpollard.rewerd`, and settings remain in `~/.config/rewerd/`. The existing development installation uses `john.edit-ai` and `~/.config/omarchy/edit-ai/`; its runtime code and built-in defaults match the release after substituting those two identifiers.
 
-## Verify the release
+## Verify the review build
 
-Run from the repository root:
+Run from this checkout:
 
 ```sh
 python3 scripts/check.py --omarchy
+python3 scripts/verify_settings_ui.py
+python3 scripts/render_preview.py
 python3 scripts/package.py
 ```
 
-Review the complete staged diff and the archive contents. The package script includes only its named runtime files, README, license, and optional named preview assets. It excludes tests, credentials, logs, caches, and development tools. Repeated builds from identical file contents produce identical archive bytes. Pattern checks can miss secrets, so review the actual files before publishing.
+The archive allowlist includes only runtime files, README, license, and preview assets. It excludes credentials, saved prompts, logs, caches, and development tools. Review the files and archive before uploading. Pattern scanning is not a complete secret audit.
+
+The preview uses sample text. Never upload screenshots containing personal selections, prompts, or credentials.
+
+## Update the GitHub draft
+
+Commit the reviewed changes and push them to `main`. Keep the release draft pinned to the full commit SHA that produced its attached archive. Upload the archive, checksum, and sample-data screenshots together. If they change, replace the existing draft assets and update the target SHA.
 
 ```sh
-tar -tzf dist/rewerd-1.0.0.tar.gz
-(cd dist && sha256sum -c rewerd-1.0.0.tar.gz.sha256)
-git status --short
-git diff --cached
+gh release view v1.0.0 --repo johnloringpollard/wordsmith
 ```
 
-Before release, manually test click and shortcut opening, fresh selection after reopening, clipboard fallback, replacement, copy, Escape, outside-click dismissal, and provider errors. Test disable, enable, shell restart, and removal in a disposable Omarchy session. Test the chosen providers with your own account only when you intend to make billable requests. Record which desktop and provider checks passed. Portable tests and QML linting do not replace these checks.
+Use `RELEASE_NOTES.md` as the release body. The archive is named `rewerd-1.0.0.tar.gz` to match the existing packaging contract; the release title is **Wordsmith 1.0.0**.
 
-Confirm that `preview.png` depicts the release and contains no private text. Confirm ownership and license provenance for code and assets.
+## Publish later
 
-## Create the public repository
+After the owner approves publication:
 
-The commands below publish externally. Run them yourself when ready. Authenticate `gh` as the intended owner first. The prepared checkout has a local `main` commit. Check `git status --short`, `git log -1`, and `git remote -v` before publishing.
+1. Recheck the repository contents and release assets.
+2. Make the repository public.
+3. Publish the draft release.
+4. Prepare the marketplace submission below and review every acknowledgment with the owner.
+5. Submit only after the owner approves the completed issue body.
 
-Only if your copy has no Git history, initialize and commit it first:
+Do not submit an issue merely to reserve an unpublished listing. Marketplace approval can lead to publication.
 
-```sh
-git init -b main
-git add README.md LICENSE PUBLISHING.md RELEASE_NOTES.md manifest.json Panel.qml Service.qml backend.py providers.py instructions.py test_*.py test_panel_reopen.cjs verify_preview.py scripts .github .gitignore .gitattributes preview.png
-git diff --cached --stat
-git diff --cached
-git commit -m "Release Rewerd 1.0.0"
-```
+## Marketplace submission
 
-Publish the prepared commit and tag:
-
-```sh
-gh repo create johnloringpollard/rewerd --public --source=. --remote=origin --description "Rewrite selected text in Omarchy with your own AI provider"
-git push -u origin main
-git tag -a v1.0.0 -m "Rewerd 1.0.0"
-git push origin v1.0.0
-```
-
-If the repository already exists, add or verify the intended `origin` and skip `gh repo create`. Do not recreate an existing tag. Confirm the public default branch contains `manifest.json`, README, license, and the runtime files.
-
-Review the included release notes, then attach the generated archive:
-
-```sh
-gh release create v1.0.0 dist/rewerd-1.0.0.tar.gz dist/rewerd-1.0.0.tar.gz.sha256 --title "Rewerd 1.0.0" --notes-file RELEASE_NOTES.md
-```
-
-The archive is a reviewable release artifact. Standard Omarchy installation uses the Git repository.
-
-## Submit the marketplace listing
-
-Follow the [publishing guide](https://plugins.omarchy.org/publish.html) and open the [Submit a plugin issue form](https://github.com/omacom/omarchy-plugin-marketplace/issues/new?template=submit-plugin.yml). The current form is `.github/ISSUE_TEMPLATE/submit-plugin.yml` in `omacom/omarchy-plugin-marketplace`.
+Follow the current [publishing guide](https://plugins.omarchy.org/publish.html) and [CLI submission guide](https://github.com/omacom/omarchy-plugin-marketplace/blob/main/SUBMISSION.md).
 
 Use these values:
 
 | Field | Value |
 | --- | --- |
-| Title | `[Plugin]: Rewerd` |
-| Repository URL | `https://github.com/johnloringpollard/rewerd` |
+| Title | `[Plugin]: Wordsmith` |
+| Repository URL | `https://github.com/johnloringpollard/wordsmith` |
 | Category | `Productivity` |
 | Tags | `AI`, `Bar`, `Quickshell` |
 | Suggest a missing tag | Leave empty |
 
-For maintainer notes, state that Rewerd requires Omarchy Quattro, Hyprland Lua dispatchers, Python 3, and wl-clipboard. Explain that direct providers use the user's API key, Cursor optionally requires its CLI, credentials remain outside the plugin directory, and the shortcut is configured manually. Mention that source text and prompts go to the chosen provider. Include the validation results and any untested behavior.
+Maintainer notes should state the Omarchy Quattro, Hyprland Lua, Python 3, and wl-clipboard requirements. Cursor optionally requires its Agent CLI. The plugin sends selected or copied text, writing defaults, and the rewrite prompt to the chosen provider. Credentials and prompts remain outside the plugin directory. The optional shortcut is configured manually.
 
-Complete the form's ownership, dependencies, installation, configuration-consent, and listing-review acknowledgments after verifying each one. The form accepts one to three tags. Marketplace approval concerns the listing and is not a security review. Check the current form again before submission because categories and tags can change.
+Report the checks actually performed. The portable tests and QML checks do not establish live provider access or a full desktop lifecycle. Paid provider requests and a separate real-desktop lifecycle have not been repeated for this release.
 
-The [development guide](https://plugins.omarchy.org/develop.html) documents the runtime contract and validation commands. A valid manifest and public repository are prerequisites, not a guarantee of approval.
+Keep all six headings from the current issue form, and confirm every required acknowledgment before submitting. A listing requires automated checks and an explicit maintainer decision; publishing a GitHub release alone does not list it in the marketplace.

@@ -120,15 +120,16 @@ class Selection:
     def from_clipboard(cls, snapshot):
         text = snapshot.plain_text()
         if not text.strip():
-            raise DesktopError("Select text or copy some text, then open Rewerd.")
+            raise NoSelectedText("Select text or copy some text, then open Wordsmith.")
         if len(text) > MAX_TEXT:
             raise DesktopError("Copy a shorter passage, up to 100,000 characters.")
         return cls(text, "", 0, "", "Clipboard", False)
 
     @classmethod
-    def capture(cls):
+    def capture(cls, previous=None):
         window = active_window()
-        previous = ClipboardSnapshot.capture()
+        if previous is None:
+            previous = ClipboardSnapshot.capture()
         address = window.get("address", "")
         if not isinstance(address, str) or not re.fullmatch(r"0x[0-9a-fA-F]+", address):
             return cls.from_clipboard(previous)
@@ -171,7 +172,7 @@ class Selection:
         window = active_window()
         if (window.get("address") != self.address or window.get("pid") != self.pid
                 or window.get("stableId", "") != self.stable_id):
-            raise DesktopError("Focus changed. Select the text again and reopen Rewerd.")
+            raise DesktopError("Focus changed. Select the text again and reopen Wordsmith.")
 
     def chord(self, key):
         self.ensure_focus()
@@ -211,7 +212,10 @@ class Backend:
         self.instructions = InstructionStore()
         self.selection = None
         self.result = ""
+        self.clipboard_baseline = ""
+        self.capture_failed = False
         self.generation = 0
+        self.active_request_id = 0
         self.lock = threading.RLock()
 
     def emit(self, kind, request_id=0, data=None, error=""):
@@ -223,15 +227,18 @@ class Backend:
             result = generate(credentials, prompt, source)
             with self.lock:
                 if generation == self.generation:
+                    self.active_request_id = 0
                     self.result = result
                     self.emit("generate", request_id, {"text": result})
         except ProviderError as exc:
             with self.lock:
                 if generation == self.generation:
+                    self.active_request_id = 0
                     self.emit("generate", request_id, error=str(exc))
         except Exception:
             with self.lock:
                 if generation == self.generation:
+                    self.active_request_id = 0
                     self.emit("generate", request_id, error="The provider returned an unexpected response. Try again.")
 
     def handle(self, message):
@@ -240,12 +247,33 @@ class Backend:
             request_id = message.get("id", 0)
             try:
                 if kind == "capture":
-                    self.generation += 1
-                    self.result = ""
-                    self.selection = None
-                    self.selection = Selection.capture()
+                    try:
+                        previous = ClipboardSnapshot.capture()
+                        try:
+                            selected = Selection.capture(previous)
+                        except NoSelectedText:
+                            if not self.selection:
+                                raise
+                            selected = None
+                        retained = bool(self.selection) and (
+                            selected is None or selected == self.selection
+                            or (not selected.address and selected.text in (
+                                self.selection.text, self.clipboard_baseline)))
+                        if not retained:
+                            self.generation += 1
+                            self.active_request_id = 0
+                            self.selection = selected
+                            self.result = ""
+                        self.clipboard_baseline = (selected.text if selected and selected.address
+                                                   else previous.plain_text())
+                        self.capture_failed = False
+                    except Exception:
+                        self.capture_failed = True
+                        raise
                     self.emit(kind, request_id, {"text": self.selection.text, "app": self.selection.app,
-                                                 "canReplace": self.selection.can_replace})
+                                                 "canReplace": self.selection.can_replace,
+                                                 "result": self.result, "retained": retained,
+                                                 "generationId": self.active_request_id})
                 elif kind == "instructions":
                     self.emit(kind, request_id, self.instructions.read())
                 elif kind == "instruction_remember":
@@ -260,6 +288,9 @@ class Backend:
                     self.config.save(message.get("provider"), message.get("model", ""),
                                      message.get("key", ""), message.get("clearKey", False))
                     self.emit(kind, request_id, self.config.public())
+                elif kind == "save_defaults":
+                    self.config.save_defaults(message.get("defaultInstructions"))
+                    self.emit(kind, request_id, self.config.public())
                 elif kind == "generate":
                     if not self.selection:
                         raise DesktopError("Select some text and reopen the panel first.")
@@ -269,20 +300,26 @@ class Backend:
                     credentials = self.config.credentials()
                     self.generation += 1
                     self.result = ""
+                    self.active_request_id = request_id
                     threading.Thread(target=self.rewrite, args=(request_id, self.generation, credentials,
                                                                 prompt, self.selection.text), daemon=True).start()
                 elif kind == "cancel":
                     self.generation += 1
+                    self.active_request_id = 0
                     self.emit(kind, request_id)
                 elif kind == "copy":
                     if not self.result:
                         raise DesktopError("Generate a result first.")
                     copy(self.result)
+                    self.clipboard_baseline = self.result
                     self.emit(kind, request_id)
                 elif kind == "replace":
                     if not self.selection or not self.result:
                         raise DesktopError("Generate a result first.")
+                    if self.capture_failed:
+                        raise DesktopError("Capture failed. Reopen the panel before replacing, or copy the result.")
                     self.selection.replace(self.result)
+                    self.clipboard_baseline = self.result
                     self.emit(kind, request_id)
                 else:
                     raise DesktopError("Unknown request.")
