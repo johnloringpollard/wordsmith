@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.johnloringpollard.rewerd",
+  "name": "Rewerd",
+  "version": "1.0.0",
+  "author": "John Pollard",
+  "description": "Rewrite selected or copied text with your own AI key, then replace it or copy the result.",
+  "kinds": [
+    "bar-widget",
+    "service"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml",
+    "service": "Service.qml"
+  },
+  "barWidget": {
+    "displayName": "Rewerd",
+    "category": "Productivity",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  },
+  "license": "MIT"
+}

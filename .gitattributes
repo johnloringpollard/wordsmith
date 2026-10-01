@@ -1,0 +1,11 @@
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+.github/ export-ignore
+scripts/ export-ignore
+test_* export-ignore
+verify_* export-ignore
+PUBLISHING.md export-ignore
+.gitignore export-ignore
+.gitattributes export-ignore
+RELEASE_NOTES.md export-ignore

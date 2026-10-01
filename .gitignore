@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.cache/
+dist/
+.env
+.env.*
+settings.json
+instructions.json
+*.log
+*.key
+*.pem
+*.bak
+*.backup*
+.DS_Store
