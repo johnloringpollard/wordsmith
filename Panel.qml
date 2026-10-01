@@ -240,29 +240,20 @@ Panel {
         implicitWidth: Math.ceil(keyLabel.implicitWidth) + 12
         implicitHeight: 24
         radius: 4
-        color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.035)
+        color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.02)
         border.width: 1
-        border.color: root.muted
+        border.color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.15)
         Accessible.role: Accessible.StaticText
         Accessible.name: label
-        Rectangle {
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            anchors.margins: 1
-            height: 2
-            radius: 1
-            color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.12)
-        }
         Text {
             id: keyLabel
             anchors.centerIn: parent
             text: keycap.label
-            color: root.ink
+            color: root.muted
             font.family: "monospace"
             font.pixelSize: 11
-            font.weight: Font.DemiBold
-            font.letterSpacing: 0.5
+            font.weight: Font.Normal
+            font.letterSpacing: 0.2
             Accessible.ignored: true
         }
     }
