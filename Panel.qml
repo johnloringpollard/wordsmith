@@ -787,9 +787,9 @@ Panel {
                                     onClicked: root.editDefaults()
                                 }
                             }
+                            Rectangle { Layout.fillWidth: true; height: 1; color: root.muted; opacity: 0.25 }
                             RowLayout {
                                 Layout.fillWidth: true
-                                Layout.topMargin: 8
                                 spacing: 8
                                 Label { text: "Keyboard shortcut"; font.pixelSize: 15; Layout.fillWidth: true }
                                 Keycap { label: "SUPER" }
