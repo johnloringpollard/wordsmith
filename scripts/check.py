@@ -23,7 +23,7 @@ def main():
     parser.add_argument("--omarchy", action="store_true", help="Require installed Omarchy manifest and QML checks")
     args = parser.parse_args()
     manifest = json.loads((ROOT / "manifest.json").read_text())
-    expected = {"schemaVersion": 1, "id": "io.github.johnloringpollard.rewerd", "name": "Wordsmith", "author": "John Pollard", "license": "MIT"}
+    expected = {"schemaVersion": 1, "id": "io.github.johnloringpollard.rewerd", "name": "Reword", "author": "John Pollard", "license": "MIT"}
     for key, value in expected.items():
         if manifest.get(key) != value:
             raise ValueError(f"Unexpected manifest {key}")

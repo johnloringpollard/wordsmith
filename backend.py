@@ -120,7 +120,7 @@ class Selection:
     def from_clipboard(cls, snapshot):
         text = snapshot.plain_text()
         if not text.strip():
-            raise NoSelectedText("Select text or copy some text, then open Wordsmith.")
+            raise NoSelectedText("Select text or copy some text, then open Reword.")
         if len(text) > MAX_TEXT:
             raise DesktopError("Copy a shorter passage, up to 100,000 characters.")
         return cls(text, "", 0, "", "Clipboard", False)
@@ -172,7 +172,7 @@ class Selection:
         window = active_window()
         if (window.get("address") != self.address or window.get("pid") != self.pid
                 or window.get("stableId", "") != self.stable_id):
-            raise DesktopError("Focus changed. Select the text again and reopen Wordsmith.")
+            raise DesktopError("Focus changed. Select the text again and reopen Reword.")
 
     def chord(self, key):
         self.ensure_focus()

@@ -20,13 +20,13 @@ app = QGuiApplication([])
 engine = QQmlApplicationEngine()
 errors = []
 engine.warnings.connect(lambda values: errors.extend(error.toString() for error in values))
-with tempfile.TemporaryDirectory(prefix='wordsmith-ui-check-') as directory:
+with tempfile.TemporaryDirectory(prefix='reword-ui-check-') as directory:
     folder = Path(directory)
     for name, value in preview.STUBS.items():
         path = folder / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(value)
-    (folder/'WordsmithPanel.qml').write_text((root/'Panel.qml').read_text().replace('import Quickshell\n',''))
+    (folder/'RewordPanel.qml').write_text((root/'Panel.qml').read_text().replace('import Quickshell\n',''))
     scene = preview.SCENE.replace("DEFAULTS_PLACEHOLDER", json.dumps(preview.DEFAULT_INSTRUCTIONS))
     scene = scene.replace('id: sample\n', '''id: sample
   objectName: "sampleService"

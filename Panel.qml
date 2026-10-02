@@ -11,7 +11,7 @@ Panel {
     manageIpc: false
     readonly property var editor: bar && bar.shell ? bar.shell.serviceFor(moduleName) : null
     readonly property bool busy: editor && editor.phase !== "idle"
-    readonly property bool useWordsmithIcon: true
+    readonly property bool useRewordIcon: true
     readonly property color ink: Color.popups.text
     readonly property color muted: Color.muted
     property bool showSettings: false
@@ -182,7 +182,7 @@ Panel {
         textFormat: Text.PlainText
         wrapMode: Text.WordWrap
     }
-    component WordsmithIcon: Canvas {
+    component RewordIcon: Canvas {
         property color iconColor: root.ink
         implicitWidth: 24
         implicitHeight: 24
@@ -318,13 +318,13 @@ Panel {
         id: button
         bar: root.bar
         text: "󰦨"
-        iconComponent: root.useWordsmithIcon ? wordsmithBarIcon : null
-        tooltipText: "Wordsmith"
+        iconComponent: root.useRewordIcon ? rewordBarIcon : null
+        tooltipText: "Reword"
         onPressed: root.toggle()
     }
     Component {
-        id: wordsmithBarIcon
-        WordsmithIcon {
+        id: rewordBarIcon
+        RewordIcon {
             iconColor: button.active && button.useActiveColor ? button.activeColor : button.foreground
         }
     }
@@ -372,10 +372,10 @@ Panel {
                     Item {
                         Layout.preferredWidth: 24
                         Layout.preferredHeight: 24
-                        WordsmithIcon { anchors.fill: parent; visible: root.useWordsmithIcon }
-                        Label { anchors.centerIn: parent; text: button.text; font.pixelSize: 22; visible: !root.useWordsmithIcon; Accessible.ignored: true }
+                        RewordIcon { anchors.fill: parent; visible: root.useRewordIcon }
+                        Label { anchors.centerIn: parent; text: button.text; font.pixelSize: 22; visible: !root.useRewordIcon; Accessible.ignored: true }
                     }
-                    Label { text: "Wordsmith"; font.pixelSize: 20; font.weight: Font.DemiBold; Layout.fillWidth: true }
+                    Label { text: "Reword"; font.pixelSize: 20; font.weight: Font.DemiBold; Layout.fillWidth: true }
                     Action {
                         id: settingsButton
                         objectName: "settingsButton"
@@ -921,7 +921,7 @@ Panel {
                             }
                             Label {
                                 Layout.fillWidth: true
-                                text: "Keys are saved in a private file on this computer. Wordsmith sends the selected text and prompt to your chosen provider."
+                                text: "Keys are saved in a private file on this computer. Reword sends the selected text and prompt to your chosen provider."
                                 color: root.muted; font.pixelSize: 11
                             }
                             RowLayout {

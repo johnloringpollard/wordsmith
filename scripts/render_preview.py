@@ -111,7 +111,7 @@ Window {
   signal copyFinished(bool failed)
  }
  QtObject { id: sampleBar; property QtObject shell: QtObject { function serviceFor(id) { return sample } } }
- WordsmithPanel {
+ RewordPanel {
   objectName: "previewPanel"
   anchors.fill: parent
   bar: sampleBar
@@ -139,7 +139,7 @@ def main():
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text)
         panel = (ROOT / 'Panel.qml').read_text().replace('import Quickshell\n', '')
-        (folder / 'WordsmithPanel.qml').write_text(panel)
+        (folder / 'RewordPanel.qml').write_text(panel)
         (folder / 'Preview.qml').write_text(SCENE.replace('DEFAULTS_PLACEHOLDER', json.dumps(DEFAULT_INSTRUCTIONS)))
         engine.addImportPath(str(folder))
         engine.load(QUrl.fromLocalFile(str(folder / 'Preview.qml')))

@@ -1,8 +1,8 @@
-# Release Wordsmith
+# Release Reword
 
-The review repository is `johnloringpollard/wordsmith`. Keep it private and keep the GitHub release in draft until the owner finishes reviewing it. A GitHub draft release is separate from an Omarchy marketplace listing. The marketplace has no documented unpublished listing editor.
+The public repository is `johnloringpollard/reword`. Prepare releases as drafts until their files and checks have been reviewed. A GitHub release is separate from an Omarchy marketplace listing.
 
-The display name is Wordsmith. Its stable plugin ID remains `io.github.johnloringpollard.rewerd`, and settings remain in `~/.config/rewerd/`. The existing development installation uses `john.edit-ai` and `~/.config/omarchy/edit-ai/`; its runtime code and built-in defaults match the release after substituting those two identifiers.
+The display name is Reword. Its stable plugin ID remains `io.github.johnloringpollard.rewerd`, and settings remain in `~/.config/rewerd/`. The existing development installation uses `john.edit-ai` and `~/.config/omarchy/edit-ai/`; its runtime code and built-in defaults match the release after substituting those two identifiers.
 
 ## Verify the review build
 
@@ -24,22 +24,16 @@ The preview uses sample text. Never upload screenshots containing personal selec
 Commit the reviewed changes and push them to `main`. Keep the release draft pinned to the full commit SHA that produced its attached archive. Upload the archive, checksum, and sample-data screenshots together. If they change, replace the existing draft assets and update the target SHA.
 
 ```sh
-gh release view v1.0.0 --repo johnloringpollard/wordsmith
+gh release view v1.0.1 --repo johnloringpollard/reword
 ```
 
-Use `RELEASE_NOTES.md` as the release body. The archive is named `rewerd-1.0.0.tar.gz` to match the existing packaging contract; the release title is **Wordsmith 1.0.0**.
+Use `RELEASE_NOTES.md` as the release body. The archive is named `rewerd-1.0.1.tar.gz` to match the existing packaging contract; the release title is **Reword 1.0.1**.
 
-## Publish later
-
-After the owner approves publication:
+## Publish a verified release
 
 1. Recheck the repository contents and release assets.
-2. Make the repository public.
-3. Publish the draft release.
-4. Prepare the marketplace submission below and review every acknowledgment with the owner.
-5. Submit only after the owner approves the completed issue body.
-
-Do not submit an issue merely to reserve an unpublished listing. Marketplace approval can lead to publication.
+2. Publish the draft after the owner authorizes the release.
+3. Update the [existing marketplace submission](https://github.com/omacom/omarchy-plugin-marketplace/issues/9678) with the verified commit and current repository URL. Do not create a duplicate submission.
 
 ## Marketplace submission
 
@@ -49,8 +43,8 @@ Use these values:
 
 | Field | Value |
 | --- | --- |
-| Title | `[Plugin]: Wordsmith` |
-| Repository URL | `https://github.com/johnloringpollard/wordsmith` |
+| Title | `[Plugin]: Reword` |
+| Repository URL | `https://github.com/johnloringpollard/reword` |
 | Category | `Productivity` |
 | Tags | `AI`, `Bar`, `Quickshell` |
 | Suggest a missing tag | Leave empty |
